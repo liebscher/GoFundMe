@@ -17,11 +17,10 @@ DRIVER_BIN = os.path.join(PROJECT_ROOT, "chromedriver")
 
 print(DRIVER_BIN)
 
-url = 'https://www.gofundme.com/mvc.php?route=homepage_norma/search&term=cancer'
+url = 'https://www.gofundme.com/mvc.php?route=homepage_norma/search&term=breast%20cancer'
 
 def extract_urls_from_categories(url, MoreGFMclicks = 5):
 
-    # eg. url = 'https://www.gofundme.com/discover/medical-fundraiser'
     driver = webdriver.Chrome(executable_path = DRIVER_BIN)
     driver.get(url)
 
@@ -29,11 +28,11 @@ def extract_urls_from_categories(url, MoreGFMclicks = 5):
         for elem in driver.find_elements_by_link_text('Show More'):
             try:
                 elem.click()
-                print('Succesful click %s' %(i+1))#make this more useful- say what category it is e.g. url.get_category()
+                print('Succesful click %s' %(i+1))
             except:
                 print('Unsuccesful click %s' %(i+1))
 
-            sleep(0.8) #longer delay - more succesful
+            sleep(3) #longer delay - more successful
 
     source = driver.page_source
 
@@ -43,13 +42,17 @@ def extract_urls_from_categories(url, MoreGFMclicks = 5):
 
     containers = soup.findAll("div", {"class": "cell grid-item small-6 medium-4 js-fund-tile"})
 
-    temp_url = []
-    i = 1
+    temp_url = pd.read_csv('data-raw/cancer_urls.csv')['url'].tolist()
 
+    c = 0
     for container in containers:
         for link in container.find_all('a'):
-            temp_url.append(link.get('href'))
+            if link.get('href') not in temp_url:
+                temp_url.append(link.get('href'))
+                c += 1
+
+    print('Found %d' % c)
 
     return temp_url
 
-print(extract_urls_from_categories(url, 2))
+pd.DataFrame({'url': extract_urls_from_categories(url, 50)}).to_csv('data-raw/cancer_urls2.csv', index=False)

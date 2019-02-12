@@ -6,21 +6,15 @@ import pandas as pd
 from time import sleep
 import requests
 import re
+from datetime import datetime
 
-mydf = pd.read_csv('GFM_url_list.csv', sep = '\t')
+from nltk.tokenize import RegexpTokenizer
+tokenizer = RegexpTokenizer(r'\w+')
 
-headers = ["Url", "Category","Position", "Title", "Location","Amount_Raised", "Goal", "Number_of_Donators", "Length_of_Fundraising", "FB_Shares", "GFM_hearts", "Text"]
-mydf = mydf.reindex(columns = headers)
+headers = ["url", "name", "location", "launched", "month", "year", "amt_raised", "goal", "backers", "mean_donation",
+           "text_length_words", "duration", "text"]
 
-full_df = pd.DataFrame(columns = headers)
-#need to scrape a single url now
-
-
-def scrape_url(row_index):
-    single_row = mydf.iloc[row_index]
-    url = single_row["Url"]
-    category = single_row["Category"]
-    position = single_row["Position"]
+def scrape_url(url):
     
     page = requests.get(url)
          
@@ -34,9 +28,9 @@ def scrape_url(row_index):
         
         amount_raised = int(info_string[0][1:].replace(',',''))
         
-        goal = re.findall('\$(.*?) goal', info_string[1])[0]
+        goal = int(re.findall('\$(.*?) goal', info_string[1])[0].replace(',',''))
         
-        NumDonators = re.findall('by (.*?) people', info_string[2])[0]
+        NumDonators = int(re.findall('by (.*?) people', info_string[2])[0].replace(',',''))
         
         timeFundraised = re.findall("in (.*)$", info_string[2])[0]
     except:
@@ -44,34 +38,47 @@ def scrape_url(row_index):
         goal = np.nan
         NumDonators = np.nan
         timeFundraised = np.nan
-        
+
+    try:
+        launched = soup.find('div', {'class': 'created-date'}).text[8:]
+        launched = datetime.strptime(launched, '%B %d, %Y')
+
+        month = launched.month
+        year = launched.year
+    except:
+        launched = np.nan
+        month = np.nan
+        year = np.nan
     
-    title_container = soup.find_all("h1",{"class":"campaign-title"})#<h1 class="campaign-title">Help Rick Muchow Beat Cancer</h1>
+    title_container = soup.find_all("h1",{"class": "campaign-title"})#<h1 class="campaign-title">Help Rick Muchow Beat Cancer</h1>
     
     try:
         title = title_container[0].text
     except:
         title = np.nan
     
-    text_container =  soup.find('meta', attrs={'name': 'description'})
+    text_container = soup.find('div', {'class': 'co-story'})
     
     try:
-        all_text = text_container['content']
+        all_text = text_container.text.strip()
+        text_length_words = len(tokenizer.tokenize(all_text))
+
     except:
         all_text = np.nan
+        text_length_words = np.nan
     
-    try:
-        FB_shares_container = soup.find_all("strong", {"class":"js-share-count-text"})
-        FB_shares = FB_shares_container[0].text.splitlines()
-        FB_shares = FB_shares[1].replace(" ", "").replace("\xa0", "")
-    except:
-        FB_shares = np.nan
+    # try:
+    #     FB_shares_container = soup.find_all("strong", {"class":"js-share-count-text"})
+    #     FB_shares = FB_shares_container[0].text.splitlines()
+    #     FB_shares = FB_shares[1].replace(" ", "").replace("\xa0", "")
+    # except:
+    #     FB_shares = np.nan
         
-    try:
-        hearts_container = soup.find_all("div", {"class":"campaign-sp campaign-sp--heart fave-num"})
-        hearts = hearts_container[0].text
-    except:
-        hearts = np.nan
+    # try:
+    #     hearts_container = soup.find_all("div", {"class":"campaign-sp campaign-sp--heart fave-num"})
+    #     hearts = hearts_container[0].text
+    # except:
+    #     hearts = np.nan
     
     try:
         location_container = soup.find_all("div", {"class":"pills-contain"})
@@ -79,24 +86,27 @@ def scrape_url(row_index):
         location = location.replace('\xa0', '').strip()
     except:
         location = np.nan
-        
-    temp_row = np.array([[url, category, position, title, location, amount_raised, goal, NumDonators, timeFundraised, FB_shares, hearts, all_text]])
-    temp_df = pd.DataFrame(temp_row, columns = headers)
     
-    return(temp_df)
+    return [url, title, location, launched, month, year, amount_raised, goal, NumDonators, amount_raised / NumDonators,
+            text_length_words, timeFundraised, all_text]
 
 
-def scrape_all_urls(file = 'GFM_data.csv', start = 0, end = len(mydf)):
-    for i in range(start, end):
+def scrape_all_urls():
+    urls = pd.read_csv('data-raw/cancer_urls.csv')['url'].values
+
+    temp_list = []
+
+    for url in urls:
         try:
-            temp_df = scrape_url(i)
-            temp_df.to_csv(file, mode = 'a',sep = '\t', header = False)
-            print("Scraping url %s" %(i+1))
+            print("Scraping url", url)
+            temp_list.append(scrape_url(url))
+
         except:
-            sleep(5)
-            temp_df = scrape_url(i)
-            temp_df.to_csv(file, mode = 'a',sep = '\t', header = False)
-            print("Scraping url %s" %(i+1))
-            
+            sleep(1.25)
+            print("Scraping url", url)
+            temp_list.append(scrape_url(url))
+
+    pd.DataFrame(temp_list, columns=headers).to_csv('data/gofundme_projects.csv', index=False)
+
         
 scrape_all_urls()
